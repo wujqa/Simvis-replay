@@ -10,7 +10,10 @@ import struct
 from const import *
 from shaders import *
 from arena_shaders import *
-from socket_listener import SocketListener
+try:
+    from socket_listener import SocketListener  # type: ignore
+except Exception:  # SocketListener not available in replay-only environments
+    SocketListener = None
 from state_manager import *
 from ribbon import *
 from outline_renderer import OutlineRenderer
@@ -587,22 +590,35 @@ class QRSVGLWidget(QtOpenGL.QGLWidget):
 
                 self.spectate_idx = closest_idx
 
-
 g_socket_listener = None
+
+
 def run_socket_thread(port):
+    """Background thread that listens for live gamestate updates."""
+
     global g_socket_listener
+    if SocketListener is None:
+        print("SocketListener module not available; live socket disabled.")
+        return
+
     g_socket_listener = SocketListener()
     g_socket_listener.run(port)
 
 def main():
-    #cmd_args = arg_parser.parse_args()
-    port = 9273
-    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", default=9273, help="UDP port for live updates")
+    parser.add_argument("--replay", default=None, help="Path to replay JSON file")
+    args = parser.parse_args()
+
     print("Starting RocketSimVis...")
 
-    print("Starting socket thread...")
-    socket_thread = threading.Thread(target=run_socket_thread, args=(int(port),))
-    socket_thread.start()
+    if args.replay is None:
+        print("Starting socket thread...")
+        socket_thread = threading.Thread(target=run_socket_thread, args=(int(args.port),))
+        socket_thread.start()
+    else:
+        socket_thread = None
+        print(f"Playing replay from {args.replay}")
 
     print("Starting visualizer window...")
 
@@ -611,10 +627,15 @@ def main():
 
     window = QRSVWindow(QRSVGLWidget(app.primaryScreen()))
     window.showNormal()
+
+    if args.replay is not None:
+        window.load_replay_file(args.replay)
+
     app.exec_()
 
     print("Shutting down...")
-    g_socket_listener.stop_async()
+    if g_socket_listener is not None:
+        g_socket_listener.stop_async()
     exit()
 
 if __name__ == "__main__":
