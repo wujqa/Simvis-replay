@@ -13,6 +13,7 @@ from PyQt5.Qt import QPainter, QWidget, pyqtSlot, QEvent
 from config import Config, ConfigVal
 
 from const import WINDOW_SIZE_X, WINDOW_SIZE_Y
+from replay_player import ReplayPlayer
 
 _g_ui_widget = None
 
@@ -161,6 +162,11 @@ class QUIBarWidget(QWidget):
         self.edit_config_button.clicked.connect(self.on_edit_config)
         vbox.addWidget(self.edit_config_button)
 
+        # Button to load a replay from disk and start playback.
+        self.load_replay_button = QtWidgets.QPushButton("Load Replay")
+        self.load_replay_button.clicked.connect(self.on_load_replay)
+        vbox.addWidget(self.load_replay_button)
+
         self.setLayout(vbox)
 
         set_target_size(self)
@@ -174,6 +180,10 @@ class QUIBarWidget(QWidget):
     @pyqtSlot()
     def on_edit_config(self):
         self.parent_window.toggle_edit_config()
+
+    @pyqtSlot()
+    def on_load_replay(self):
+        self.parent_window.load_replay_dialog()
 
     def set_text(self, text: str):
         self.text_label.setText(text)
@@ -194,6 +204,11 @@ class QRSVWindow(QtWidgets.QMainWindow):
         self.gl_widget = gl_widget
         self.setCentralWidget(self.gl_widget)
 
+        # Player responsible for feeding replay frames into the global state
+        # manager.  It remains idle until a replay is loaded either via the UI
+        # button or command line argument.
+        self.replay_player = ReplayPlayer(self)
+
         self.base_layout = QtWidgets.QVBoxLayout(self)
 
         self.bar_widget = QUIBarWidget(self)
@@ -207,6 +222,21 @@ class QRSVWindow(QtWidgets.QMainWindow):
 
         self.installEventFilter(self)
         self.centralWidget().installEventFilter(self)
+
+    def load_replay_dialog(self):
+        """Open a file picker and start replay playback if a file is chosen."""
+
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Select Replay JSON", "", "JSON Files (*.json)")
+        if path:
+            self.load_replay_file(path)
+
+    def load_replay_file(self, path: str, fps: int = 60):
+        """Load a replay from ``path`` and begin playback."""
+
+        self.replay_player.stop()
+        self.replay_player.load_file(path)
+        self.replay_player.play(fps)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress:
